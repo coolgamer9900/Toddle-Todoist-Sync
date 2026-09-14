@@ -1,0 +1,44 @@
+name: Sync Toddle to Todoist
+
+on:
+  schedule:
+    # 6:00 AM Singapore time (UTC+8) = 22:00 UTC the previous day
+    - cron: "0 22 * * *"
+  workflow_dispatch: {}  # lets you trigger it manually from the Actions tab
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore sync state
+        uses: actions/cache@v4
+        with:
+          path: synced_links.json
+          key: synced-links-${{ github.run_id }}
+          restore-keys: |
+            synced-links-
+
+      - name: Run sync
+        env:
+          TODDLE_ICS_URL: ${{ secrets.TODDLE_ICS_URL }}
+          TODOIST_API_TOKEN: ${{ secrets.TODOIST_API_TOKEN }}
+          TODOIST_PROJECT_ID: ${{ secrets.TODOIST_PROJECT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python toddle_todoist_sync.py
+
+      - name: Commit updated sync state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add synced_links.json
+          git diff --staged --quiet || git commit -m "Update synced_links.json"
+          git push
