@@ -29,7 +29,7 @@ import json
 import os
 import re
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 from icalendar import Calendar
@@ -264,35 +264,44 @@ def active_tasks_by_key() -> dict:
     return tasks
 
 
-def completed_task_keys(since: str = "2026-08-01") -> set:
-    """dedup keys seen among COMPLETED tasks. These are never touched or
-    recreated regardless of a reschedule -- if it's done, it's done.
+def completed_task_keys(lookback_days: int = LOOKBACK_DAYS) -> set:
+    """dedup keys seen among COMPLETED tasks over the last `lookback_days`.
 
-    Uses a different endpoint (/tasks/completed/by_completion_date) than
-    active_tasks_by_key(), and that endpoint responds with
-    "items"/"nextCursor" (camelCase), not "results"/"next_cursor" like the
-    regular task list does.
+    Todoist's /tasks/completed/by_completion_date endpoint only accepts a
+    window of ~3 months per request, so a longer lookback is fetched as a
+    series of back-to-back 90-day chunks and merged.
     """
     keys = set()
-    cursor = None
     url = f"{TODOIST_API}/completed/by_completion_date"
-    while True:
-        params = {
-            "projectId": PROJECT_ID,
-            "since": since,
-            "until": date.today().isoformat(),
-            "limit": 200,
-        }
-        if cursor:
-            params["cursor"] = cursor
-        resp = requests.get(url, headers=HEADERS, params=params)
-        resp.raise_for_status()
-        data = resp.json()
-        for task in data.get("items", []):
-            keys.update(signature_keys(task.get("content", ""), task.get("description", "")))
-        cursor = data.get("nextCursor")
-        if not cursor:
-            break
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+
+    end = datetime.now(timezone.utc)
+    window_start = end - timedelta(days=lookback_days)
+
+    while window_start < end:
+        window_end = min(window_start + timedelta(days=CHUNK_DAYS), end)
+        cursor = None
+        while True:
+            params = {
+                "project_id": PROJECT_ID,
+                "since": window_start.strftime(fmt),
+                "until": window_end.strftime(fmt),
+                "limit": 200,
+            }
+            if cursor:
+                params["cursor"] = cursor
+            resp = requests.get(url, headers=HEADERS, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            for task in data.get("items", []):
+                keys.update(
+                    signature_keys(task.get("content", ""), task.get("description", ""))
+                )
+            cursor = data.get("next_cursor") or data.get("nextCursor")
+            if not cursor:
+                break
+        window_start = window_end
+
     return keys
 
 
