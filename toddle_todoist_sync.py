@@ -41,6 +41,8 @@ TODOIST_TOKEN = os.environ["TODOIST_API_TOKEN"]
 PROJECT_ID = os.environ["TODOIST_PROJECT_ID"]
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+LOOKBACK_DAYS = 365   # how far back to check for completed tasks
+CHUNK_DAYS = 90       # Todoist rejects windows longer than ~92 days
 
 HEADERS = {
     "Authorization": f"Bearer {TODOIST_TOKEN}",
